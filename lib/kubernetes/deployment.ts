@@ -22,14 +22,14 @@ import * as k8s from "@kubernetes/client-node";
 import * as http from "http";
 import * as stringify from "json-stringify-safe";
 import * as _ from "lodash";
-import { DeepPartial } from "ts-essentials";
-import { errMsg } from "../support/error";
-import { logRetry } from "../support/retry";
+import {DeepPartial} from "ts-essentials";
+import {errMsg} from "../support/error";
+import {logRetry} from "../support/retry";
 import {
     applicationLabels,
     matchLabels,
 } from "./labels";
-import { metadataTemplate } from "./metadata";
+import {metadataTemplate} from "./metadata";
 import {
     appName,
     KubernetesApplication,
@@ -81,10 +81,67 @@ export async function deleteDeployment(req: KubernetesDeleteResourceRequest): Pr
         logger.debug(`Deployment ${slug} does not exist: ${errMsg(e)}`);
         return;
     }
-    const body: k8s.V1DeleteOptions = { propagationPolicy: "Background" } as any;
+    const body: k8s.V1DeleteOptions = {propagationPolicy: "Background"} as any;
     await logRetry(() => req.clients.apps.deleteNamespacedDeployment(req.name, req.ns, "", body),
         `delete deployment ${slug}`);
     return;
+}
+
+/**
+ * Rollback a deployment if it exists. If the resource does not exist,
+ * do nothing.
+ *
+ * @param req Kubernetes delete request
+ */
+export async function rollbackDeployment(req: KubernetesDeleteResourceRequest): Promise<void> {
+    const slug = appName(req);
+    try {
+        await req.clients.apps.readNamespacedDeployment(req.name, req.ns);
+    } catch (e) {
+        logger.debug(`Deployment ${slug} does not exist: ${errMsg(e)}`);
+        return;
+    }
+    const body: k8s.ExtensionsV1beta1DeploymentRollback = {
+        apiVersion: "apps/v1beta1",
+        kind: "Rollback",
+        name: req.name,
+        rollbackTo: {revision: 0},
+        updatedAnnotations: undefined,
+    };
+    await logRetry(() => req.clients.ext.createNamespacedDeploymentRollback(req.name, req.ns, body),
+        `rollback deployment ${slug}`).then(status => logger.info(status.response.statusMessage));
+    return;
+}
+
+/**
+ * Validate that a deployment has been correctly deployed to k8. If the resource
+ * does not exit, do nothing.
+ *
+ * https://github.com/kubernetes-client/python/issues/571#issuecomment-405890791
+ *
+ * @param req KubernetesDeleteRequest
+ * @param timeout Number in milliseconds
+ */
+export async function kubeImageValidate(req: KubernetesDeleteResourceRequest, timeout: number): Promise<boolean> {
+    const slug = appName(req);
+    try {
+        const start = Date.now();
+
+        while (Date.now() - start < timeout) {
+            const response = await req.clients.apps.readNamespacedDeploymentStatus(req.name, req.ns);
+            const status = response.body.status;
+            await new Promise(resolve => setTimeout(resolve, 5000));
+            if (status.updatedReplicas === response.body.spec.replicas &&
+                status.replicas === response.body.spec.replicas &&
+                status.availableReplicas === response.body.spec.replicas &&
+                status.observedGeneration >= response.body.metadata.generation) {
+                return true;
+            }
+        }
+    } catch (e) {
+        logger.debug(`Deployment ${slug} does not exist: ${errMsg(e)}`);
+    }
+    return false;
 }
 
 /**
@@ -177,7 +234,7 @@ export async function deploymentTemplate(req: KubernetesApplication & Kubernetes
         d.spec.template.spec.containers[0].livenessProbe = probe;
     }
     if (req.imagePullSecret) {
-        d.spec.template.spec.imagePullSecrets = [{ name: req.imagePullSecret }];
+        d.spec.template.spec.imagePullSecrets = [{name: req.imagePullSecret}];
     }
     if (req.roleSpec) {
         d.spec.template.spec.serviceAccountName = _.get(req, "serviceAccountSpec.metadata.name", req.name);
