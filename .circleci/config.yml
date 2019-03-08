@@ -1,0 +1,98 @@
+default: &defaults
+  docker:
+    - image: circleci/node:8
+  working_directory: ~/smd-pack-k8s/workspace
+
+version: 2
+jobs:
+  setup:
+    <<: *defaults
+    steps:
+      - checkout
+      - save_cache:
+          key: repo-v1-{{ .Branch }}-{{ .Revision }}
+          paths:
+            - ~/.ssh
+      - run:
+          name: install dependencies
+          command: npm install
+      - persist_to_workspace:
+          root: ~/sdm-pack-k8s
+          paths:
+            - workspace
+
+  unit_tests:
+    <<: *defaults
+    steps:
+      - attach_workspace:
+          at: ~/sdm-pack-k8s
+      - run:
+          name: run unit tests
+          command: npm run test
+
+  build:
+    <<: *defaults
+    steps:
+      - attach_workspace:
+          at: ~/sdm-pack-k8s
+      - run:
+          name: production build
+          command: npm run build
+      - persist_to_workspace:
+          root: ~/sdm-pack-k8s
+          paths:
+            - workspace
+
+  build_docker_image:
+    <<: *defaults
+    steps:
+      - attach_workspace:
+          at: ~/sdm-pack-k8s
+      - setup_remote_docker
+      - run:
+          name: build-tag and push docker image
+          command: |
+            echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
+            docker build -t marlettefunding/$CIRCLE_PROJECT_REPONAME:$(node -p "require('./package.json').version") -f ./deployment/docker/Dockerfile .
+            docker push marlettefunding/$CIRCLE_PROJECT_REPONAME
+            docker logout
+
+  git_tag:
+    <<: *defaults
+    steps:
+      - attach_workspace:
+          at: ~/sdm-pack-k8s
+      - restore_cache:
+          key: repo-v1-{{ .Branch }}-{{ .Revision }}
+      - run:
+          name: Tag and Publish to Github
+          command: |
+            git tag $(node -p "require('./package.json').version") $CIRCLE_SHA1
+            git push --tags
+
+  update_version_minor:
+    <<: *defaults
+    steps:
+      - checkout
+      - run:
+          name: Update version and commit to Github
+          command: |
+            git config credential.helper 'cache --timeout=120'
+            git config user.email $GIT_USER_EMAIL
+            git config user.name $GIT_USERNAME
+            npm version minor -m "Increment minor version [skip ci]"
+            git push
+
+  update_version_patch:
+    <<: *defaults
+    steps:
+      - checkout
+      - run:
+          name: Update version and commit to Github
+          command: |
+            git config credential.helper 'cache --timeout=120'
+            git config user.email $GIT_USER_EMAIL
+            git config user.name $GIT_USERNAME
+            npm version minor -m "Increment minor version [skip ci]"
+            git push --set-upstream origin $CIRCLE_BRANCH
+
