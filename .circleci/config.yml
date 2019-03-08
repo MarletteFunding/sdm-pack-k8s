@@ -1,7 +1,7 @@
 default: &defaults
   docker:
     - image: circleci/node:8
-  working_directory: ~/smd-pack-k8s/workspace
+  working_directory: ~/sdm-pack-k8s/workspace
 
 version: 2
 jobs:
