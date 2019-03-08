@@ -1,0 +1,121 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sdm-pack-k8s-serviceaccount
+  namespace: k8-automation
+  labels:
+    owner: Marlette
+---
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRole
+metadata:
+  name: sdm-pack-k8s-clusterrole
+  labels:
+    owner: Marlette
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces", "services"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["extensions", "apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["extensions"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRoleBinding
+metadata:
+  name: sdm-pack-k8s-clusterrole-binding
+  labels:
+    owner: Marlette
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: sdm-pack-k8s-clusterrole
+subjects:
+  - kind: ServiceAccount
+    name: sdm-pack-k8s-serviceaccount
+    namespace: k8-automation
+---
+kind: Deployment
+apiVersion: extensions/v1beta1
+metadata:
+  name: sdm-pack-k8s
+  namespace: k8-automation
+  labels:
+    app: sdm-pack-k8s
+    owner: Marlette
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app: sdm-pack-k8s
+      owner: Marlette
+  template:
+    metadata:
+      labels:
+        app: sdm-pack-k8s
+        owner: Marlette
+        version: "0"
+    spec:
+      serviceAccountName: sdm-pack-k8s-serviceaccount
+      containers:
+        - name: sdm-pack-k8s
+          image: sdm-pack-k8s:0.1.0
+          imagePullPolicy: Never
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: ATOMIST_CONFIG
+              valueFrom:
+                secretKeyRef:
+                  name: automation
+                  key: config
+          ports:
+            - name: http
+              containerPort: 2866
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: "/health"
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 20
+            timeoutSeconds: 3
+            periodSeconds: 20
+            successThreshold: 1
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: "/health"
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 20
+            timeoutSeconds: 3
+            periodSeconds: 20
+            successThreshold: 1
+            failureThreshold: 3
+          resources:
+            limits:
+              cpu: 500m
+              memory: 384Mi
+            requests:
+              cpu: 100m
+              memory: 256Mi
+      imagePullSecrets:
+        - name: regcred
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+      dnsPolicy: ClusterFirst
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
