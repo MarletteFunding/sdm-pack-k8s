@@ -130,7 +130,7 @@ export async function kubeImageValidate(req: KubernetesDeleteResourceRequest, ti
         while (Date.now() - start < timeout) {
             const response = await req.clients.apps.readNamespacedDeploymentStatus(req.name, req.ns);
             const status = response.body.status;
-            await new Promise(resolve => setTimeout(resolve, 5000));
+            await sleep();
             if (status.updatedReplicas === response.body.spec.replicas &&
                 status.replicas === response.body.spec.replicas &&
                 status.availableReplicas === response.body.spec.replicas &&
@@ -144,6 +144,9 @@ export async function kubeImageValidate(req: KubernetesDeleteResourceRequest, ti
     return false;
 }
 
+async function sleep(): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, 5000));
+}
 /**
  * Create deployment spec for a Kubernetes application.  If the
  * request has a `deploymentSpec`, it is merged into the default spec
