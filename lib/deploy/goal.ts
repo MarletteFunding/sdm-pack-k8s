@@ -14,7 +14,10 @@
  * limitations under the License.
  */
 
-import { GitProject } from "@atomist/automation-client";
+import {
+    GitProject,
+    HandlerContext,
+} from "@atomist/automation-client";
 import {
     AnyPush,
     DefaultGoalNameGenerator,
@@ -48,7 +51,31 @@ export function goalEventSlug(goalEvent: SdmGoalEvent): string {
  * [[KubernetesApplication]] object.
  */
 export type ApplicationDataCallback =
-    (a: KubernetesApplication, p: GitProject, g: KubernetesDeploy, e: SdmGoalEvent) => Promise<KubernetesApplication>;
+    (a: KubernetesApplication, p: GitProject, g: KubernetesDeploy, e: SdmGoalEvent, ctx: HandlerContext) => Promise<KubernetesApplication>;
+
+/**
+ * Sources of information for Kubernetes goal application data.
+ */
+export enum KubernetesDeployDataSources {
+    /** Read deployment spec from `.atomist/kubernetes`. */
+    DeploymentSpec = "DeploymentSpec",
+    /** Read EXPOSE from Dockerfile to get service port. */
+    Dockerfile = "Dockerfile",
+    /** Parse `goalEvent.` as JSON. */
+    GoalEvent = "GoalEvent",
+    /** Read ingress spec from `.atomist/kubernetes`. */
+    IngressSpec = "IngressSpec",
+    /** Read role-binding spec from `.atomist/kubernetes`. */
+    RoleBindingSpec = "RoleBindingSpec",
+    /** Read role spec from `.atomist/kubernetes`. */
+    RoleSpec = "RoleSpec",
+    /** Load `sdm.configuration.sdm.k8s.app`. */
+    SdmConfiguration = "SdmConfiguration",
+    /** Read service-account spec from `.atomist/kubernetes`. */
+    ServiceAccountSpec = "ServiceAccountSpec",
+    /** Read service spec from `.atomist/kubernetes`. */
+    ServiceSpec = "ServiceSpec",
+}
 
 /**
  * Registration object to pass to KubernetesDeployment goal to
@@ -61,17 +88,23 @@ export interface KubernetesDeployRegistration {
      */
     applicationData?: ApplicationDataCallback;
     /**
-     * It not set (falsey), this SDM will fulfill its own Kubernetes
-     * deployment goals.  If set, its value defines the name of the
-     * SDM that will fulfill the goal.  In this case, there should be
-     * another SDM running whose name, i.e., its name as defined in
-     * its registration/package.json, is the same as this name.
+     * If falsey, this SDM will fulfill its own Kubernetes deployment
+     * goals.  If set, its value defines the name of the SDM that will
+     * fulfill the goal.  In this case, there should be another SDM
+     * running whose name, i.e., its name as defined in its
+     * registration/package.json, is the same as this name.
      */
     name?: string;
     /**
      * Optional push test for this goal implementation.
      */
     pushTest?: PushTest;
+    /**
+     * Determine what parts of the repository to use to generate the
+     * initial Kubernetes goal application data.  It no value is
+     * provided, all sources are used.
+     */
+    dataSources?: KubernetesDeployDataSources[];
 }
 
 /**
@@ -163,6 +196,22 @@ export class KubernetesDeploy extends FulfillableGoalWithRegistrations<Kubernete
 }
 
 /**
+ * Populate data sources properrty of registration with all possible
+ * KubernetesGoalDataSources if it is not defined.  Otherwise, leave
+ * it as is.  The registration object is modified directly and
+ * returned.
+ *
+ * @param registration Kubernetes deploy object registration
+ * @return registration with data sources
+ */
+export function defaultDataSources(registration: KubernetesDeployRegistration): KubernetesDeployRegistration {
+    if (!registration.dataSources) {
+        registration.dataSources = Object.values(KubernetesDeployDataSources);
+    }
+    return registration;
+}
+
+/**
  * If in SDM team mode, this goal executor generates and stores the
  * Kubernetes application data for deploying an application to
  * Kubernetes.  It returns the augmented SdmGoalEvent with the
@@ -170,6 +219,9 @@ export class KubernetesDeploy extends FulfillableGoalWithRegistrations<Kubernete
  * state of the SdmGoalEvent set to "in_process".  The actual
  * deployment is done by the [[kubernetesDeployHandler]] event
  * handler.
+ *
+ * It will call [[defaultDataSources]] to populate the default
+ * repository data sources if none are provided in the registration.
  *
  * If in SDM local mode, generate the Kubernetes application data and
  * deploy the application.
@@ -180,6 +232,7 @@ export class KubernetesDeploy extends FulfillableGoalWithRegistrations<Kubernete
  */
 export function initiateKubernetesDeploy(k8Deploy: KubernetesDeploy, registration: KubernetesDeployRegistration): ExecuteGoal {
     return async (goalInvocation: GoalInvocation): Promise<ExecuteGoalResult> => {
+        defaultDataSources(registration);
         const goalEvent = await generateKubernetesGoalEventData(k8Deploy, registration, goalInvocation);
         if (isInLocalMode()) {
             return deployApplication(goalEvent, goalInvocation.context, goalInvocation.progressLog);
