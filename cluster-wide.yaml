@@ -65,7 +65,6 @@ spec:
       containers:
         - name: sdm-pack-k8s
           image: sdm-pack-k8s:1.4.0
-          imagePullPolicy: Never
           env:
             - name: NODE_ENV
               value: production
@@ -110,7 +109,7 @@ spec:
               cpu: 100m
               memory: 256Mi
       imagePullSecrets:
-        - name: regcred
+        - name: dockercreds
       restartPolicy: Always
       terminationGracePeriodSeconds: 30
       dnsPolicy: ClusterFirst
