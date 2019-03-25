@@ -64,7 +64,7 @@ spec:
       serviceAccountName: sdm-pack-k8s-serviceaccount
       containers:
         - name: sdm-pack-k8s
-          image: sdm-pack-k8s:0.1.0
+          image: sdm-pack-k8s:1.4.0
           imagePullPolicy: Never
           env:
             - name: NODE_ENV
