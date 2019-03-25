@@ -22,6 +22,7 @@ import * as _ from "lodash";
 import {kubernetesRollback} from "./commands/kubernetesRollback";
 import { kubernetesUndeploy } from "./commands/kubernetesUndeploy";
 import { kubernetesDeployHandler } from "./events/kubernetesDeploy";
+import { providerStartupListener } from "./provider/kubernetesCluster";
 import { minikubeStartupListener } from "./support/minikube";
 
 /**
@@ -34,6 +35,12 @@ export interface SdmPackK8sOptions {
      * provided, the comand is not added.
      */
     addCommands?: boolean;
+
+    /**
+     * Whether to register and converge a k8s cluster.  Typically this
+     * is used from k8s-sdm to manage k8s cluster it is running in.
+     */
+    registerCluster?: boolean;
 }
 
 /**
@@ -79,6 +86,9 @@ export function k8sSupport(options: SdmPackK8sOptions = {}): ExtensionPack {
 
             sdm.addEvent(kubernetesDeployHandler(sdm.configuration.name));
 
+            if (sdm.configuration.sdm.k8s.options.registerCluster) {
+                sdm.addStartupListener(providerStartupListener);
+            }
             sdm.addStartupListener(minikubeStartupListener);
 
         },
