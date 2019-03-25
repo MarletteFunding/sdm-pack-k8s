@@ -39,10 +39,12 @@ RUN curl -sL -o /usr/local/bin/kubectl https://storage.googleapis.com/kubernetes
 # Install app dependencies
 COPY package.json package-lock.json ./
 RUN npm ci
-RUN npm run build
 
 # Bundle app source
 COPY . .
+
+RUN npm run build
+
 
 # Start Atomist
 CMD [ "/opt/app/node_modules/.bin/npm", "start" ]
