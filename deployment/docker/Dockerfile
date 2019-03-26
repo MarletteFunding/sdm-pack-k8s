@@ -47,4 +47,4 @@ RUN npm run build
 
 
 # Start Atomist
-CMD [ "/opt/app/node_modules/.bin/npm", "start" ]
+CMD [ "node_modules/.bin/atm-start" ]
